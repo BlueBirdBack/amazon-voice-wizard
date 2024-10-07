@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Text-to-Speech Application</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+  </head>
+  <body
+    class="bg-gray-100 min-h-screen flex items-center justify-center px-4 py-12"
+  >
+    <div id="app" class="max-w-2xl w-full bg-white rounded-lg shadow-md p-8">
+      <h1 class="text-3xl font-bold text-center mb-8">
+        Text-to-Speech Converter
+      </h1>
+      <form @submit.prevent="submitForm" class="space-y-6">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label
+              for="language"
+              class="block text-sm font-medium text-gray-700 mb-1"
+              >Language</label
+            >
+            <select
+              id="language"
+              v-model="language"
+              @change="updateVoiceOptions"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Choose a language...</option>
+              <option v-for="lang in languages" :key="lang" :value="lang">
+                {{ lang }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label
+              for="gender"
+              class="block text-sm font-medium text-gray-700 mb-1"
+              >Gender</label
+            >
+            <select
+              id="gender"
+              v-model="gender"
+              @change="updateVoiceOptions"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Choose a gender...</option>
+              <option value="Female">Female</option>
+              <option value="Male">Male</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label
+              for="voice"
+              class="block text-sm font-medium text-gray-700 mb-1"
+              >Voice</label
+            >
+            <select
+              id="voice"
+              v-model="selectedVoice"
+              :disabled="!voicesAvailable"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="">Choose a voice...</option>
+              <option
+                v-for="voice in availableVoices"
+                :key="voice.Id"
+                :value="voice.Id"
+              >
+                {{ voice.Name }}
+              </option>
+            </select>
+          </div>
+          <div>
+            <label
+              for="speed"
+              class="block text-sm font-medium text-gray-700 mb-1"
+              >Speech Rate</label
+            >
+            <select
+              id="speed"
+              v-model="speed"
+              class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+            >
+              <option value="x-slow">Extra Slow</option>
+              <option value="slow">Slow</option>
+              <option value="medium">Medium</option>
+              <option value="fast">Fast</option>
+              <option value="x-fast">Extra Fast</option>
+              <option value="xx-fast">Very Fast</option>
+              <option value="xxx-fast">Extremely Fast</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label for="text" class="block text-sm font-medium text-gray-700 mb-1"
+            >Text to read</label
+          >
+          <textarea
+            id="text"
+            v-model="text"
+            maxlength="1000"
+            minlength="1"
+            placeholder="Type some text here..."
+            class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 h-48"
+          ></textarea>
+          <p class="text-sm text-gray-500 mt-1">
+            {{ text.length }}/1000 characters
+          </p>
+        </div>
+        <button
+          type="submit"
+          :disabled="!formValid"
+          class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          Generate Speech
+        </button>
+      </form>
+      <div v-if="audioSrc" class="mt-8">
+        <h2 class="text-xl font-semibold mb-4">Audio Player</h2>
+        <audio
+          id="player"
+          ref="player"
+          :src="audioSrc"
+          controls
+          class="w-full"
+        ></audio>
+      </div>
+    </div>
+
+    <script>
+      const { createApp, ref, computed, onMounted, watch } = Vue;
+
+      createApp({
+        setup() {
+          const language = ref("");
+          const gender = ref("");
+          const selectedVoice = ref("");
+          const speed = ref("slow");
+          const text = ref("");
+          const audioSrc = ref("");
+          const languages = ref([]);
+          const availableVoices = ref([]);
+          const voicesAvailable = ref(false);
+          const supportedFormats = ref([]);
+          const voicesByLanguageAndGender = ref({});
+
+          const fetchVoices = () => {
+            fetch("/voices")
+              .then((response) => response.json())
+              .then((voices) => {
+                const languageSet = new Set();
+                voicesByLanguageAndGender.value = {};
+
+                voices.forEach((voice) => {
+                  const lang = voice.LanguageName;
+                  const gen = voice.Gender;
+
+                  languageSet.add(lang);
+
+                  if (!voicesByLanguageAndGender.value[lang]) {
+                    voicesByLanguageAndGender.value[lang] = {};
+                  }
+                  if (!voicesByLanguageAndGender.value[lang][gen]) {
+                    voicesByLanguageAndGender.value[lang][gen] = [];
+                  }
+                  voicesByLanguageAndGender.value[lang][gen].push(voice);
+                });
+
+                languages.value = Array.from(languageSet);
+              })
+              .catch((error) => console.error("Error fetching voices:", error));
+          };
+
+          const updateVoiceOptions = () => {
+            if (language.value && gender.value) {
+              availableVoices.value =
+                voicesByLanguageAndGender.value[language.value][gender.value] ||
+                [];
+              voicesAvailable.value = availableVoices.value.length > 0;
+            } else {
+              availableVoices.value = [];
+              voicesAvailable.value = false;
+            }
+            selectedVoice.value = "";
+          };
+
+          const getSupportedAudioFormats = () => {
+            const audio = new Audio();
+            const formats = {
+              ogg_vorbis: "audio/ogg",
+              mp3: "audio/mpeg",
+              pcm: "audio/wave; codecs=1",
+            };
+
+            supportedFormats.value = Object.keys(formats).filter((format) => {
+              const canPlay = audio.canPlayType(formats[format]);
+              return canPlay === "probably" || canPlay === "maybe";
+            });
+          };
+
+          const player = ref(null);
+
+          const submitForm = () => {
+            if (formValid.value) {
+              const params = new URLSearchParams({
+                voiceId: selectedVoice.value,
+                text: text.value,
+                outputFormat: supportedFormats.value[0],
+                speed: speed.value,
+                filename: `speech_${Date.now()}.${supportedFormats.value[0]}`,
+              });
+
+              audioSrc.value = `/read?${params.toString()}`;
+            }
+          };
+
+          // Add this watcher
+          watch(audioSrc, (newSrc) => {
+            if (newSrc) {
+              // Use nextTick to ensure the audio element has been updated
+              Vue.nextTick(() => {
+                if (player.value) {
+                  player.value.play();
+                }
+              });
+            }
+          });
+
+          const formValid = computed(() => {
+            return (
+              selectedVoice.value &&
+              text.value.length > 0 &&
+              supportedFormats.value.length > 0
+            );
+          });
+
+          onMounted(() => {
+            fetchVoices();
+            getSupportedAudioFormats();
+            // Get a reference to the audio element
+            player.value = document.getElementById("player");
+          });
+
+          return {
+            language,
+            gender,
+            selectedVoice,
+            speed,
+            text,
+            audioSrc,
+            languages,
+            availableVoices,
+            voicesAvailable,
+            updateVoiceOptions,
+            submitForm,
+            formValid,
+            player,
+          };
+        },
+      }).mount("#app");
+    </script>
+  </body>
+</html>
